@@ -4,6 +4,7 @@
 
 from collections import OrderedDict
 import numpy as np
+import sys
 
 from robosuite.utils.transform_utils import convert_quat
 from robosuite.utils.mjcf_utils import CustomMaterial, find_elements, string_to_array
@@ -499,7 +500,6 @@ class StackThree(Stack_D0):
             for k in ["cubeA", "cubeB", "cubeC"]
         }
 
-
 class StackThree_D0(StackThree):
     """Rename base class for convenience."""
     pass
@@ -544,4 +544,204 @@ class StackThree_D1(StackThree_D0):
                 reference=np.array((0, 0, 0.8)),
             )
             for k in ["cubeA", "cubeB", "cubeC"]
+        }
+
+
+class StackFour_D0(Stack, SingleArmEnv_MG):
+
+    def __init__(self, **kwargs):
+        
+
+        assert "placement_initializer" not in kwargs, "this class defines its own placement initializer!"
+
+
+        bounds = self._get_initial_placement_bounds()
+
+
+        # ensure cube symmetry
+        assert len(bounds) == 4
+        for k in ["x", "y", "z_rot", "reference"]:
+            arrays = [np.array(bounds["cubeA"][k]), np.array(bounds["cubeB"][k]), np.array(bounds["cubeC"][k]), np.array(bounds["cubeD"][k])]
+
+            assert all(np.array_equal(arrays[0], arr) for arr in arrays[1:]), "all arrays must be equal"
+
+        placement_initializer = UniformRandomSampler(name = "ObjectSampler",
+        x_range=bounds["cubeA"]["x"],
+        y_range=bounds["cubeA"]["y"],
+        rotation=bounds["cubeA"]["z_rot"],
+        rotation_axis='z',
+        ensure_object_boundary_in_range = False,
+        ensure_valid_placement = True,
+        reference_pos = bounds['cubeA']['reference'],
+        z_offset = 0.01)
+
+        Stack.__init__(self, placement_initializer = placement_initializer, **kwargs)
+
+    def edit_model_xml(self, xml_str):
+        return SingleArmEnv_MG.edit_model_xml(self, xml_str)
+
+    def reward(self, action = None):
+        return Stack.reward(self, action = action)
+    
+    def check_valid_ordering(self, cube_ordering, cube_height, lift_margin = 0.01,  cube_dims = [0.02, 0.02, 0.02]):
+        assert cube_dims[0] == cube_dims[1] == cube_dims[2]
+        table_height = self.table_offset[2]
+        for idx, _ in enumerate(cube_ordering):
+            # check if consecutive cubes in the ordering are touching each other 
+            if idx < len(cube_ordering) - 1:
+                is_touching = self.check_contact(self.cube_str_to_var_map["cube" + cube_ordering[idx]], self.cube_str_to_var_map["cube" + cube_ordering[idx + 1]])
+                if not is_touching:
+                    return False
+            
+            # check if the cubes except for the botton one is not simply lying on the table, that is they are lifted off the ground, since they could be in contact in the specified order, but they might just be lying on the table
+            if idx > 0:
+                body_height = self.sim.data.body_xpos[self.cube_str_to_var_map["cube" + cube_ordering[idx]]][2]
+                body_lifted = body_height > table_height  + lift_margin
+                if not body_lifted:
+                    return False
+            
+            # check if the gripper is grasping the cube - it should not be grasping any of the cubes in the final state - i.e the state in which reward will be = 1.
+            if self._check_grasp(gripper = self.robots[0].gripper, object_geoms = self.cube_str_to_var_map["cube" + cube_ordering[idx]]):
+                return False
+        return True
+            
+    def _check_cubes_stacked(self):
+        # this is the final state that we want the cubes to be in - TODO modify this so that we define 4 cubes which are stacked on top of each other - left to right is bottom to top. 
+        
+        valid_cube_orderings = [["A", "B", "C", "D"],["B", "A", "C", "D"],["B", "A", "D", "C"],["A", "B", "D", "C"]]
+
+        for cube_ordering in valid_cube_orderings:
+            is_valid = self.check_valid_ordering(cube_ordering, 0.02)
+
+        return is_valid
+
+
+    def _load_arena(self):
+        # allow subclasses to easily overrride arena settings
+
+        mujoco_arena = TableArena(
+            table_full_size=self.table_full_size,
+            table_friction=self.table_friction,
+            table_offset=self.table_offset,
+        )
+
+        # Arena always gets set to zero origin
+        mujoco_arena.set_origin([0, 0, 0])
+
+        # Add camera with full tabletop perspective
+        self._add_agentview_full_camera(mujoco_arena)
+
+        return mujoco_arena
+
+    def _load_model(self):
+        """
+        Loads an xml model, puts in self.model
+        """
+
+        SingleArmEnv._load_model(self)
+
+        # Adjust base pose accordingly
+
+        xpos = self.robots[0].robot_model.base_xpos_offset['table'](self.table_full_size[0])
+        self.robots[0].robot_model.set_base_xpos(xpos)
+
+        # load model for table top workspace
+        mujoco_arena = self._load_arena()
+
+        # initialize objects of interest
+        tex_attrib = {"type" : "cube"}
+
+        mat_attrib = {
+            "texrepeat": "1 1",
+            "specular": "0.4",
+            "shininess": "0.1",}
+        
+        redwood = CustomMaterial(
+            texture="WoodRed",
+            tex_name="redwood",
+            mat_name="redwood_mat",
+            tex_attrib=tex_attrib,
+            mat_attrib=mat_attrib,
+        )
+
+        greenwood = CustomMaterial(
+            texture="WoodGreen",
+            tex_name="greenwood",
+            mat_name="greenwood_mat",
+            tex_attrib=tex_attrib,
+            mat_attrib=mat_attrib,)
+    
+        
+        self.cubeA = BoxObject(
+            name="cubeA",
+            size_min=[0.02, 0.02, 0.02],
+            size_max=[0.02, 0.02, 0.02],
+            rgba=[1, 0, 0, 1],
+            material=redwood,
+        )
+        
+        self.cubeB = BoxObject(
+            name="cubeB",
+            size_min=[0.02, 0.02, 0.02],
+            size_max=[0.02, 0.02, 0.02],
+            rgba=[1, 0, 0, 1],
+            material=redwood,
+        )
+
+        self.cubeC = BoxObject(
+            name="cubeC",
+            size_min=[0.02, 0.02, 0.02],
+            size_max=[0.02, 0.02, 0.02],
+            rgba=[0, 1, 0, 1],
+            material=greenwood)
+        
+
+        self.cubeD = BoxObject(
+            name="cubeD",
+            size_min=[0.02, 0.02, 0.02],
+            size_max=[0.02, 0.02, 0.02],
+            rgba=[0, 1, 0, 1],
+            material=greenwood)
+
+        
+        cubes = [self.cubeA, self.cubeB, self.cubeC, self.cubeD]
+        self.cube_str_to_var_map = {"cubeA": self.cubeA, "cubeB": self.cubeB, "cubeC": self.cubeC, "cubeD": self.cubeD}
+
+        # Create a placement initializer object 
+        if self.placement_initializer is not None:
+            self.placement_initializer.reset()
+            self.placement_initializer.add_objects(cubes)
+        else:
+            self.placement_initializer = UniformRandomSampler(name = 'ObjectSampler', mujoco_objects=cubes,
+            x_range  = [-0.08, 0.08],
+            y_range = [-0.08, 0.08],
+            rotation = None,
+            ensure_object_boundary_in_range = False,
+            ensure_valid_placement = True,
+            reference_pos = self.table_offset,
+            z_offset = 0.01,)
+        
+        # task/environment includes arena, robot, and objects of interest 
+
+        self.model = ManipulationTask(mujoco_arena = mujoco_arena, mujoco_robots = [robot.robot_model for robot in self.robots], mujoco_objects = cubes)
+    
+    def _get_initial_placement_bounds(self):
+        """
+        Internal function to get bounds for randomization of initial placement of objects, e.g. what happens when env.reset is called, should return a dictionary with the following structure:
+            object_name
+                x: 2 tuple for low and high values for uniform sampling of x position
+                y: 2-tuple for low and high values for uniform sampling of y-position
+                z_rot: 2-tuple for low and high values for uniform sampling of z-rotation
+                reference: np array of shape (3,) for reference position in world frame (assumed to be static and not changing
+        """
+        
+        return { 
+            k : dict(
+                x=(-0.08, 0.08),
+                y=(-0.08, 0.08),
+                z_rot=(0., 2. * np.pi),
+                # NOTE: hardcoded @self.table_offset since this might be called in init function
+                reference=np.array((0, 0, 0.8)),
+            )
+            for k in ["cubeA", "cubeB", "cubeC", "cubeD"]
         }

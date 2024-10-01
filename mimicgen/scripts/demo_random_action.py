@@ -8,6 +8,7 @@ Similar to the demo_random_action.py script from robosuite.
 """
 from robosuite.controllers import load_controller_config
 from robosuite.utils.input_utils import *
+import sys
 
 
 def choose_mimicgen_environment():
@@ -54,7 +55,6 @@ def choose_mimicgen_environment():
     # Return the chosen environment name
     return envs[k]
 
-
 if __name__ == "__main__":
 
     # Create dict to hold options that will be passed to env creation call
@@ -83,7 +83,6 @@ if __name__ == "__main__":
 
     # Get action limits
     low, high = env.action_spec
-
     # do visualization
     for i in range(10000):
         action = np.random.uniform(low, high)
