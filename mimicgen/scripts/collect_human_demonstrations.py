@@ -54,7 +54,7 @@ def collect_human_trajcetory(env, device, arm, env_configuration):
         if task_completion_hold_count == 0:
             break
         
-        env._check_cubes_stacked()
+        print(env.reward())
 
         if env._check_success():
             if task_completion_hold_count > 0:
