@@ -43,8 +43,7 @@ def collect_human_trajcetory(env, device, arm, env_configuration):
         active_robot = env.robots[0] if env_configuration == 'bimanual' else env.robots[arm == 'left']
 
         # get the newest action
-        action, grasp = input2action(device=device, robot=active_robot, active_arm=arm, env_configuration=env_configuration)
-
+        action, grasped = input2action(device=device, robot=active_robot, active_arm=arm, env_configuration=env_configuration)
         if action is None:
             break
         
@@ -54,6 +53,8 @@ def collect_human_trajcetory(env, device, arm, env_configuration):
         # break if we complete the task
         if task_completion_hold_count == 0:
             break
+        
+        env._check_cubes_stacked()
 
         if env._check_success():
             if task_completion_hold_count > 0:

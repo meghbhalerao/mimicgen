@@ -579,30 +579,44 @@ class StackFour_D0(Stack, SingleArmEnv_MG):
 
     def edit_model_xml(self, xml_str):
         return SingleArmEnv_MG.edit_model_xml(self, xml_str)
+    
+    def staged_rewards(self):
+        pass
+    
+    def _check_success(self):
+        if self.reward() > 0:
+            return True
+        return False
 
     def reward(self, action = None):
-        return self._check_cubes_stacked()
+        return int(self._check_cubes_stacked())
     
     def _check_valid_ordering(self, cube_ordering, cube_height, lift_margin = 0.01,  cube_dims = [0.02, 0.02, 0.02]):
         assert cube_dims[0] == cube_dims[1] == cube_dims[2]
         table_height = self.table_offset[2]
+
+        for idx, _ in enumerate(cube_ordering):
+            # check if the cubes except for the botton one is not simply lying on the table, that is they are lifted off the ground, since they could be in contact in the specified order, but they might just be lying on the table
+            if idx > 0:
+                print(self.sim.data.body_xpos)
+                sys.exit()
+                body_height = self.sim.data.body_xpos[self.cube_str_to_var_map["cube" + cube_ordering[idx]]][2]
+                body_lifted = body_height > table_height  + lift_margin
+                if not body_lifted:
+                    return False
+
+        # check if the gripper is grasping the cube - it should not be grasping any of the cubes in the final state - i.e the state in which reward will be = 1.      
+        for idx, _ in enumerate(cube_ordering):
+            if self._check_grasp(gripper = self.robots[0].gripper, object_geoms = self.cube_str_to_var_map["cube" + cube_ordering[idx]]):
+                return False
+
         for idx, _ in enumerate(cube_ordering):
             # check if consecutive cubes in the ordering are touching each other 
             if idx < len(cube_ordering) - 1:
                 is_touching = self.check_contact(self.cube_str_to_var_map["cube" + cube_ordering[idx]], self.cube_str_to_var_map["cube" + cube_ordering[idx + 1]])
                 if not is_touching:
                     return False
-            
-            # check if the cubes except for the botton one is not simply lying on the table, that is they are lifted off the ground, since they could be in contact in the specified order, but they might just be lying on the table
-            if idx > 0:
-                body_height = self.sim.data.body_xpos[self.cube_str_to_var_map["cube" + cube_ordering[idx]]][2]
-                body_lifted = body_height > table_height  + lift_margin
-                if not body_lifted:
-                    return False
-            
-            # check if the gripper is grasping the cube - it should not be grasping any of the cubes in the final state - i.e the state in which reward will be = 1.
-            if self._check_grasp(gripper = self.robots[0].gripper, object_geoms = self.cube_str_to_var_map["cube" + cube_ordering[idx]]):
-                return False
+
         return True
             
     def _check_cubes_stacked(self):
@@ -615,6 +629,15 @@ class StackFour_D0(Stack, SingleArmEnv_MG):
 
         return is_valid
 
+    def _setup_references(self):
+
+        super()._setup_references()
+
+        # Additional object references from this env
+        self.cubeA_body_id = self.sim.model.body_name2id(self.cubeA.root_body)
+        self.cubeB_body_id = self.sim.model.body_name2id(self.cubeB.root_body)
+        self.cubeC_body_id = self.sim.model.body_name2id(self.cubeC.root_body)
+        self.cubeD_body_id = self.sim.model.body_name2id(self.cubeD.root_body)
 
     def _load_arena(self):
         # allow subclasses to easily overrride arena settings
@@ -745,3 +768,19 @@ class StackFour_D0(Stack, SingleArmEnv_MG):
             )
             for k in ["cubeA", "cubeB", "cubeC", "cubeD"]
         }
+
+# def main():
+#     import robosuite as suite
+
+#     env = suite.make(env_name = 'StackFour_D0', robots = 'Panda', controller_configs = load_controller_config(default_controller="OSC_POSE"), has_renderer=True, has_offscreen_renderer=False, ignore_done=True, use_camera_obs=False, control_freq=20)
+
+
+#     env.reset()
+#     env.viewer.set_camera(camera_id=0)
+    
+#     print(env._check_success)
+
+
+
+# if __name__ == '__main__':
+#     main()
