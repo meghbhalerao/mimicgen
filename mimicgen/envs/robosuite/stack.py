@@ -581,9 +581,9 @@ class StackFour_D0(Stack, SingleArmEnv_MG):
         return SingleArmEnv_MG.edit_model_xml(self, xml_str)
 
     def reward(self, action = None):
-        return Stack.reward(self, action = action)
+        return self._check_cubes_stacked()
     
-    def check_valid_ordering(self, cube_ordering, cube_height, lift_margin = 0.01,  cube_dims = [0.02, 0.02, 0.02]):
+    def _check_valid_ordering(self, cube_ordering, cube_height, lift_margin = 0.01,  cube_dims = [0.02, 0.02, 0.02]):
         assert cube_dims[0] == cube_dims[1] == cube_dims[2]
         table_height = self.table_offset[2]
         for idx, _ in enumerate(cube_ordering):
@@ -606,12 +606,12 @@ class StackFour_D0(Stack, SingleArmEnv_MG):
         return True
             
     def _check_cubes_stacked(self):
-        # this is the final state that we want the cubes to be in - TODO modify this so that we define 4 cubes which are stacked on top of each other - left to right is bottom to top. 
+        # this is the final state that we want the cubes to be in
         
         valid_cube_orderings = [["A", "B", "C", "D"],["B", "A", "C", "D"],["B", "A", "D", "C"],["A", "B", "D", "C"]]
 
         for cube_ordering in valid_cube_orderings:
-            is_valid = self.check_valid_ordering(cube_ordering, 0.02)
+            is_valid = self._check_valid_ordering(cube_ordering, 0.02)
 
         return is_valid
 
