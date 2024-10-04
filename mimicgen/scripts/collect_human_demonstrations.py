@@ -21,7 +21,6 @@ from robosuite.wrappers import DataCollectionWrapper, VisualizationWrapper
 from demo_random_action import choose_mimicgen_environment
 from robosuite.utils.input_utils import *
 
-
 def collect_human_trajcetory(env, device, arm, env_configuration):
     """
     Use device (keyboard or SpaceNav 3D Mouse) to collect a demonstration.

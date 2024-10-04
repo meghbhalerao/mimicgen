@@ -13,7 +13,7 @@ from robosuite.environments.manipulation.single_arm_env import SingleArmEnv
 from robosuite.models.arenas import TableArena
 from robosuite.models.objects import BoxObject
 from robosuite.models.tasks import ManipulationTask
-from robosuite.utils.placement_samplers import UniformRandomSampler
+from robosuite.utils.placement_samplers import UniformRandomSampler, ObjectPositionSampler
 from robosuite.utils.observables import Observable, sensor
 from robosuite.environments.manipulation.stack import Stack
 
@@ -598,22 +598,21 @@ class StackFour_D0(Stack, SingleArmEnv_MG):
         for idx, _ in enumerate(cube_ordering):
             # check if the cubes except for the botton one is not simply lying on the table, that is they are lifted off the ground, since they could be in contact in the specified order, but they might just be lying on the table
             if idx > 0:
-                print(self.sim.data.body_xpos)
-                sys.exit()
-                body_height = self.sim.data.body_xpos[self.cube_str_to_var_map["cube" + cube_ordering[idx]]][2]
+                body_height = self.sim.data.body_xpos[self.cube_str_to_cube_id["cube" + cube_ordering[idx]]][2]
+                print(body_height)
                 body_lifted = body_height > table_height  + lift_margin
                 if not body_lifted:
                     return False
 
         # check if the gripper is grasping the cube - it should not be grasping any of the cubes in the final state - i.e the state in which reward will be = 1.      
         for idx, _ in enumerate(cube_ordering):
-            if self._check_grasp(gripper = self.robots[0].gripper, object_geoms = self.cube_str_to_var_map["cube" + cube_ordering[idx]]):
+            if self._check_grasp(gripper = self.robots[0].gripper, object_geoms = self.cube_str_to_cube["cube" + cube_ordering[idx]]):
                 return False
 
         for idx, _ in enumerate(cube_ordering):
             # check if consecutive cubes in the ordering are touching each other 
             if idx < len(cube_ordering) - 1:
-                is_touching = self.check_contact(self.cube_str_to_var_map["cube" + cube_ordering[idx]], self.cube_str_to_var_map["cube" + cube_ordering[idx + 1]])
+                is_touching = self.check_contact(self.cube_str_to_cube["cube" + cube_ordering[idx]], self.cube_str_to_cube["cube" + cube_ordering[idx + 1]])
                 if not is_touching:
                     return False
 
@@ -638,6 +637,8 @@ class StackFour_D0(Stack, SingleArmEnv_MG):
         self.cubeB_body_id = self.sim.model.body_name2id(self.cubeB.root_body)
         self.cubeC_body_id = self.sim.model.body_name2id(self.cubeC.root_body)
         self.cubeD_body_id = self.sim.model.body_name2id(self.cubeD.root_body)
+        self.cube_str_to_cube_id = {"cubeA": self.cubeA_body_id, "cubeB": self.cubeB_body_id, "cubeC": self.cubeC_body_id, "cubeD": self.cubeD_body_id}
+        self.cube_str_to_cube = {"cubeA": self.cubeA, "cubeB": self.cubeB, "cubeC": self.cubeC, "cubeD": self.cubeD}
 
     def _load_arena(self):
         # allow subclasses to easily overrride arena settings
@@ -728,9 +729,11 @@ class StackFour_D0(Stack, SingleArmEnv_MG):
 
         
         cubes = [self.cubeA, self.cubeB, self.cubeC, self.cubeD]
-        self.cube_str_to_var_map = {"cubeA": self.cubeA, "cubeB": self.cubeB, "cubeC": self.cubeC, "cubeD": self.cubeD}
+
 
         # Create a placement initializer object 
+        print(self.placement_initializer)
+        sys.exit()
         if self.placement_initializer is not None:
             self.placement_initializer.reset()
             self.placement_initializer.add_objects(cubes)
@@ -746,6 +749,9 @@ class StackFour_D0(Stack, SingleArmEnv_MG):
         
         # task/environment includes arena, robot, and objects of interest 
 
+        self.placement_initializer = CustomStackPlacementInitializer(cubes=cubes, table_offset=self.table_offset)
+        self.placement_initializer.reset()
+        print(self.placement_initializer)
         self.model = ManipulationTask(mujoco_arena = mujoco_arena, mujoco_robots = [robot.robot_model for robot in self.robots], mujoco_objects = cubes)
     
     def _get_initial_placement_bounds(self):
@@ -768,6 +774,31 @@ class StackFour_D0(Stack, SingleArmEnv_MG):
             )
             for k in ["cubeA", "cubeB", "cubeC", "cubeD"]
         }
+
+class CustomStackPlacementInitializer(ObjectPositionSampler):
+    """
+    Custom placement initializer that stacks red cubes on the bottom and green cubes on top.
+    """
+    def __init__(self, cubes, table_offset, z_offset=0.02):
+        self.cubes = cubes
+        self.table_offset = table_offset
+        self.z_offset = z_offset
+
+    def reset(self):
+        # Stack the cubes explicitly by setting their positions
+        # Assumes cubes are in order: [red_cubeA, red_cubeB, green_cubeC, green_cubeD]
+        xpos = self.table_offset[0]
+        ypos = self.table_offset[1]
+
+        # Set object positions in the Mujoco XML by assigning initial pos for each cube
+        self.cubes[0].body_offset = [xpos, ypos, self.z_offset]         # Red cube A
+        self.cubes[1].body_offset = [xpos, ypos, self.z_offset + 0.02]   # Red cube B on top of cube A
+        self.cubes[2].body_offset = [xpos, ypos, self.z_offset + 0.04]   # Green cube C on top of red cubes
+        self.cubes[3].body_offset = [xpos, ypos, self.z_offset + 0.06]   # Green cube D on top of cube C
+
+    def add_objects(self, objects):
+        pass
+
 
 # def main():
 #     import robosuite as suite
